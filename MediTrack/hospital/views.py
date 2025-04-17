@@ -37,8 +37,6 @@ def patientclick_view(request):
     return render(request,'hospital/patientclick.html')
 
 
-
-
 def admin_signup_view(request):
     form=forms.AdminSignupForm()
     if request.method=='POST':
@@ -51,8 +49,6 @@ def admin_signup_view(request):
             my_admin_group[0].user_set.add(user)
             return HttpResponseRedirect('adminlogin')
     return render(request,'hospital/adminsignup.html',{'form':form})
-
-
 
 
 def doctor_signup_view(request):
@@ -96,10 +92,6 @@ def patient_signup_view(request):
     return render(request,'hospital/patientsignup.html',context=mydict)
 
 
-
-
-
-
 #for checking user is doctor , patient or admin
 def is_admin(user):
     return user.groups.filter(name='ADMIN').exists()
@@ -122,8 +114,6 @@ def afterlogin_view(request):
     elif is_patient(request.user):
         accountapproval=models.Patient.objects.all().filter(user_id=request.user.id,status=True)
         if accountapproval:
-            return redirect('patient-dashboard')
-        else:
             return render(request,'hospital/patient_wait_for_approval.html')
 
 
@@ -485,6 +475,76 @@ def admin_view_appointment_view(request):
     appointments=models.Appointment.objects.all().filter(status=True)
     return render(request,'hospital/admin_view_appointment.html',{'appointments':appointments})
 
+#Appointment scheduling system with merge sort
+
+# Merge sort algorithm to sort appointments by time
+def merge_sort(appointments):
+    if len(appointments) <= 1:
+        return appointments
+
+    mid = len(appointments) // 2
+    left = appointments[:mid]
+    right = appointments[mid:]
+
+    left = merge_sort(left)
+    right = merge_sort(right)
+
+    return merge(left, right)
+
+def merge(left, right):
+    merged = []
+    left_index = 0
+    right_index = 0
+
+    while left_index < len(left) and right_index < len(right):
+        if left[left_index].appointmentDate <= right[right_index].appointmentDate:
+            merged.append(left[left_index])
+            left_index += 1
+        else:
+            merged.append(right[right_index])
+            right_index += 1
+
+    merged.extend(left[left_index:])
+    merged.extend(right[right_index:])
+    return merged
+
+# Function to add a new appointment
+def add_appointment(request):
+    if request.method == 'POST':
+        form = forms.AppointmentForm(request.POST)
+        if form.is_valid():
+            form.save()
+            return redirect('admin-view-appointment')  # Redirect to the view displaying appointments
+    else:
+        form = forms.AppointmentForm()
+    return render(request, 'hospital/add_appointment.html', {'form': form})
+
+# Function to cancel an existing appointment
+def cancel_appointment(request, appointment_id):
+    appointment = models.Appointment.objects.get(pk=appointment_id)
+    appointment.delete()
+    return redirect('admin-view-appointment')  # Redirect to the view displaying appointments
+
+# Function to reschedule an appointment (This is a basic implementation and might need adjustments)
+def reschedule_appointment(request, appointment_id):
+    appointment = models.Appointment.objects.get(pk=appointment_id)
+    if request.method == 'POST':
+        form = forms.AppointmentForm(request.POST, instance=appointment)
+        if form.is_valid():
+            form.save()
+            return redirect('admin-view-appointment')  # Redirect to the view displaying appointments
+    else:
+        form = forms.AppointmentForm(instance=appointment)
+    return render(request, 'hospital/reschedule_appointment.html', {'form': form, 'appointment': appointment})
+
+# Function to display all scheduled appointments in sorted order
+def display_sorted_appointments(request):
+    appointments = list(models.Appointment.objects.filter(status=True))  # Fetch appointments and convert to list
+    sorted_appointments = merge_sort(appointments)  # Sort the list
+    return render(request, 'hospital/sorted_appointments.html', {'appointments': sorted_appointments})
+
+
+# End of Appointment scheduling system
 
 @login_required(login_url='adminlogin')
 @user_passes_test(is_admin)
@@ -663,8 +723,7 @@ def patient_dashboard_view(request):
 @user_passes_test(is_patient)
 def patient_appointment_view(request):
     patient=models.Patient.objects.get(user_id=request.user.id) #for profile picture of patient in sidebar
-    appointments = models.Appointment.objects.filter(patientId=request.user.id).order_by('-appointmentDateTime')
-    return render(request,'hospital/patient_appointment.html',{'patient':patient, 'appointments':appointments,})
+    return render(request,'hospital/patient_appointment.html',{'patient':patient})
 
 
 @login_required(login_url='patientlogin')
@@ -676,7 +735,6 @@ def patient_book_appointment_view(request):
     mydict={'appointmentForm':appointmentForm,'patient':patient,'message':message}
     if request.method=='POST':
         appointmentForm=forms.PatientAppointmentForm(request.POST)
-        print("Submitted doctorId:", request.POST.get('doctorId'))
         if appointmentForm.is_valid():
             print(request.POST.get('doctorId'))
             desc=request.POST.get('description')
@@ -685,17 +743,13 @@ def patient_book_appointment_view(request):
             
             appointment=appointmentForm.save(commit=False)
             appointment.doctorId=request.POST.get('doctorId')
-            appointment.patientId=request.user.id 
+            appointment.patientId=request.user.id #----user can choose any patient but only their info will be stored
             appointment.doctorName=models.User.objects.get(id=request.POST.get('doctorId')).first_name
-            appointment.patientName=request.user.first_name 
+            appointment.patientName=request.user.first_name #----user can choose any patient but only their info will be stored
             appointment.status=False
             appointment.save()
-            return HttpResponseRedirect(reverse('patient-view-appointment')) 
-        else:
-            print(appointmentForm.errors)
         return HttpResponseRedirect('patient-view-appointment')
     return render(request,'hospital/patient_book_appointment.html',context=mydict)
-
 
 
 def patient_view_doctor_view(request):
